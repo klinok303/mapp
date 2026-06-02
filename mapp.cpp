@@ -107,6 +107,7 @@ LRESULT CALLBACK wnd_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             HDC hdc_mem = CreateCompatibleDC(hdc);
             HGDIOBJ h_old_bmp = SelectObject(hdc_mem, g_screen);
             
+            SetStretchBltMode(hdc, COLORONCOLOR);
             StretchBlt(hdc, g_x, g_y, img_width, img_height,
                        hdc_mem, 0, 0, g_width, g_height, SRCCOPY);
             
@@ -124,6 +125,7 @@ LRESULT CALLBACK wnd_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (wParam == VK_ESCAPE || wParam == 'Q') {
             PostQuitMessage(0);
         } else if (wParam == 'R') {
+            g_zoom = 1.0;
             center_image(hWnd);
             InvalidateRect(hWnd, nullptr, TRUE);
         }
