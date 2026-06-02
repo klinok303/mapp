@@ -2,7 +2,7 @@
 #include <io.h>
 #include <windows.h>
 
-HBITMAP g_screen = NULL;
+HBITMAP g_screen = nullptr;
 
 int g_width = 0;
 int g_height = 0;
@@ -16,6 +16,38 @@ int g_my = 0;
 float g_zoom = 1;
 
 bool g_is_dragging = false;
+
+void UpdateScreenshot() {
+    if (g_screen) {
+        DeleteObject(g_screen);
+    }
+    
+    g_width = GetSystemMetrics(SM_CXSCREEN);
+    g_height = GetSystemMetrics(SM_CYSCREEN);
+    
+    HDC h_screen_dc = GetDC(nullptr);
+    if (!h_screen_dc) return;
+    
+    HDC h_memory_dc = CreateCompatibleDC(h_screen_dc);
+    if (!h_memory_dc) {
+        ReleaseDC(nullptr, h_screen_dc);
+        return;
+    }
+    
+    g_screen = CreateCompatibleBitmap(h_screen_dc, g_width, g_height);
+    if (!g_screen) {
+        DeleteDC(h_memory_dc);
+        ReleaseDC(nullptr, h_screen_dc);
+        return;
+    }
+    
+    HGDIOBJ h_old_bmp = SelectObject(h_memory_dc, g_screen);
+    BitBlt(h_memory_dc, 0, 0, g_width, g_height, h_screen_dc, 0, 0, SRCCOPY);
+    SelectObject(h_memory_dc, h_old_bmp);
+    
+    DeleteDC(h_memory_dc);
+    ReleaseDC(nullptr, h_screen_dc);
+}
 
 void center_image(HWND h_wnd) {
     RECT client_rect;
@@ -93,7 +125,7 @@ LRESULT CALLBACK wnd_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             PostQuitMessage(0);
         } else if (wParam == 'R') {
             center_image(hWnd);
-            InvalidateRect(hWnd, NULL, TRUE);
+            InvalidateRect(hWnd, nullptr, TRUE);
         }
         break;
     
@@ -169,6 +201,23 @@ LRESULT CALLBACK wnd_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_ERASEBKGND:
         return 1;
     
+    case WM_HOTKEY: {
+        if (wParam == 1) {
+            if (IsWindowVisible(hWnd)) {
+                ShowWindow(hWnd, SW_HIDE);
+            } else {
+                UpdateScreenshot();
+                g_zoom = 1.0;
+                center_image(hWnd);
+                ShowWindow(hWnd, SW_SHOW);
+                SetForegroundWindow(hWnd);
+                InvalidateRect(hWnd, NULL, TRUE);
+                UpdateWindow(hWnd);
+            }
+        }
+        break;
+    }
+    
     default:
         return DefWindowProcW(hWnd, msg, wParam, lParam);
     }
@@ -177,35 +226,8 @@ LRESULT CALLBACK wnd_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 int WINAPI WinMain(HINSTANCE h_instance, HINSTANCE h_prev_instance, LPSTR argv,
     int argc) {
-    g_width = GetSystemMetrics(SM_CXSCREEN);
-    g_height = GetSystemMetrics(SM_CYSCREEN);
+    UpdateScreenshot();
     
-    HWND h_desktop_wnd = GetDesktopWindow();
-    HDC h_screen_dc = GetDC(NULL);
-    if (!h_screen_dc) {
-        MessageBox(nullptr, "Get screen context failed", "Error", MB_ICONERROR);
-        return 3;
-    }
-
-    HDC h_memory_dc = CreateCompatibleDC(h_screen_dc);
-    if (!h_memory_dc) {
-        ReleaseDC(h_desktop_wnd, h_screen_dc);
-        MessageBox(nullptr, "Creating memory context failed", "Error", MB_ICONERROR);
-        return 4;
-    }
-
-    g_screen = CreateCompatibleBitmap(h_screen_dc, g_width, g_height);
-    if (!g_screen) {
-        DeleteDC(h_memory_dc);
-        ReleaseDC(h_desktop_wnd, h_screen_dc);
-        MessageBox(nullptr, "Creating bitmap failed", "Error", MB_ICONERROR);
-        return 5;
-    }
-
-    HGDIOBJ h_old_bmp = SelectObject(h_memory_dc, g_screen);
-    BitBlt(h_memory_dc, 0, 0, g_width, g_height, h_screen_dc, 0, 0, SRCCOPY);
-    SelectObject(h_memory_dc, h_old_bmp);
-
     // ---- CREATING WINDOW ----
     WNDCLASS wc = {0};
     wc.lpfnWndProc   = wnd_proc;
@@ -217,33 +239,35 @@ int WINAPI WinMain(HINSTANCE h_instance, HINSTANCE h_prev_instance, LPSTR argv,
     if (!RegisterClass(&wc)) {
         MessageBox(nullptr, "Window class initialization failed", "Error", MB_ICONERROR);
         DeleteObject(g_screen);
-        DeleteDC(h_memory_dc);
-        ReleaseDC(h_desktop_wnd, h_screen_dc);
         return 1;
     }
     
     HWND w = CreateWindowW(L"MappClass", L"",
-        WS_POPUP | WS_VISIBLE | WS_OVERLAPPED, 0, 0, g_width, g_height,
+        WS_POPUP, 0, 0, g_width, g_height,
         NULL, NULL, NULL, NULL);
     
     if (!w) {
         MessageBox(nullptr, "Window creation failed", "Error", MB_ICONERROR);
         DeleteObject(g_screen);
-        DeleteDC(h_memory_dc);
-        ReleaseDC(h_desktop_wnd, h_screen_dc);
         return 2;
     }
-
+    
+    if (!RegisterHotKey(w, 1, MOD_CONTROL | MOD_SHIFT, VK_F10)) {
+        MessageBox(nullptr, "Failed to register hotkey (Ctrl+Shift+F10)", "Warning", MB_ICONWARNING);
+    }
+    
+    ShowWindow(w, SW_HIDE);
+    
     MSG msg = {0};
     while (GetMessage(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
-
+    
+    UnregisterHotKey(w, 1);
+    
     // ---- DEINIT  ----
     DeleteObject(g_screen);
-    DeleteDC(h_memory_dc);
-    ReleaseDC(h_desktop_wnd, h_screen_dc);
     
     return 0;
 }

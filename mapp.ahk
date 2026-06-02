@@ -1,1 +1,0 @@
-^!+s::Run "mapp.exe"
